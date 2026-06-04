@@ -79,5 +79,4 @@ temp/
 
 # DatasheetGenerator
 DatasheetGenerator/wwwroot/schema_graph/data/
-DatasheetGenerator/wwwroot/handsontable.full.min.js
-DatasheetGenerator/wwwroot/handsontable.full.min.css
+DatasheetGenerator/wwwroot/revogrid/

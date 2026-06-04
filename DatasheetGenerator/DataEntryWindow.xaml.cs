@@ -15,70 +15,243 @@ public partial class DataEntryWindow : Window
     <!DOCTYPE html>
     <html><head>
       <meta charset="utf-8">
-      <link rel="stylesheet" href="https://app.local/handsontable.full.min.css">
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; overflow: hidden; }
-        #hot { width: 100%; height: 100%; }
+        html, body { height: 100%; overflow: hidden; background: #fff; color: #000; }
+        #grid { width: 100%; height: 100%; display: block; }
+        #ctx-menu {
+          display: none; position: fixed; z-index: 9999;
+          background: #fff; border: 1px solid #aaa;
+          box-shadow: 2px 2px 6px rgba(0,0,0,0.18);
+          padding: 4px 0; min-width: 160px; font: 13px sans-serif;
+        }
+        .ctx-item { padding: 6px 16px; cursor: pointer; }
+        .ctx-item:hover { background: #e8f0fe; }
+        .ctx-sep { margin: 4px 0; border: none; border-top: 1px solid #ddd; }
       </style>
     </head>
     <body>
-      <div id="hot"></div>
-      <script src="https://app.local/handsontable.full.min.js"></script>
+      <revo-grid id="grid"></revo-grid>
+      <div id="ctx-menu">
+        <div class="ctx-item" id="ctx-row-above">Insert row above</div>
+        <div class="ctx-item" id="ctx-row-below">Insert row below</div>
+        <hr class="ctx-sep">
+        <div class="ctx-item" id="ctx-copy">Copy</div>
+        <div class="ctx-item" id="ctx-cut">Cut</div>
+      </div>
       <script>
-        const COLOR_SETS = [
-          { l1: '#FFB347', l2: '#FFCA76', leaf: '#FFDFB0' },
-          { l1: '#74B9E8', l2: '#95CAF0', leaf: '#B8DCF5' },
-          { l1: '#74C774', l2: '#96D896', leaf: '#B8E8B8' },
-          { l1: '#B094D4', l2: '#C4B0E0', leaf: '#D8CCEC' },
-          { l1: '#F08080', l2: '#F5A0A0', leaf: '#FAC0C0' },
-          { l1: '#5BC0AE', l2: '#80D0C2', leaf: '#A5DFD6' },
-          { l1: '#E8C840', l2: '#EDD470', leaf: '#F2E0A0' },
-          { l1: '#F09858', l2: '#F5B280', leaf: '#FACBA8' },
-          { l1: '#A098D8', l2: '#B8B2E4', leaf: '#D0CCED' },
-          { l1: '#60D0A8', l2: '#80DCBC', leaf: '#A0E8D0' }
-        ];
+        // Synchronous stub: queues the C# initialize() call until the async module is ready.
+        let _pendingInit = null;
+        window.initialize = (data) => { _pendingInit = data; };
 
-        let hot = null;
-        let initColumns = [];
-        const colorMap = {};
-        let ctrlHeld = false;
-        document.addEventListener('keydown', e => { if (e.ctrlKey) ctrlHeld = true; });
-        document.addEventListener('keyup', e => { if (!e.ctrlKey) ctrlHeld = false; });
-        document.addEventListener('blur', () => { ctrlHeld = false; });
+        // Set autoSizeColumn before the custom element is defined so Stencil
+        // picks it up as a pre-upgrade own property during componentWillLoad.
+        document.getElementById('grid').autoSizeColumn = { allColumns: true, mode: 'autoSizeOnTextOverlap' };
 
-        function initialize(data) {
-          initColumns = data.columns;
+        (async () => {
+          await import('https://app.local/revogrid/revo-grid.esm.js');
+          const { h } = await import('https://app.local/revogrid/index.esm.js');
 
-          const level1Groups = [...new Set(initColumns.map(c => c.level1Group).filter(Boolean))];
-          level1Groups.forEach((group, i) => {
-            colorMap[group] = COLOR_SETS[i % COLOR_SETS.length];
-          });
+          const COLOR_SETS = [
+            { l1: '#FFB347', l2: '#FFCA76', leaf: '#FFDFB0' },
+            { l1: '#74B9E8', l2: '#95CAF0', leaf: '#B8DCF5' },
+            { l1: '#74C774', l2: '#96D896', leaf: '#B8E8B8' },
+            { l1: '#B094D4', l2: '#C4B0E0', leaf: '#D8CCEC' },
+            { l1: '#F08080', l2: '#F5A0A0', leaf: '#FAC0C0' },
+            { l1: '#5BC0AE', l2: '#80D0C2', leaf: '#A5DFD6' },
+            { l1: '#E8C840', l2: '#EDD470', leaf: '#F2E0A0' },
+            { l1: '#F09858', l2: '#F5B280', leaf: '#FACBA8' },
+            { l1: '#A098D8', l2: '#B8B2E4', leaf: '#D0CCED' },
+            { l1: '#60D0A8', l2: '#80DCBC', leaf: '#A0E8D0' }
+          ];
 
-          const nestedHeaders = buildNestedHeaders(initColumns);
-          const rowData = (data.rows || []).map(row => row.map(cell => cell ?? ''));
+          let grid = null;
+          let initColumns = [];
+          let sourceData = [];
+          let currentSelection = null;
+          let ctrlHeld = false;
 
-          hot = new Handsontable(document.getElementById('hot'), {
-            data: rowData,
-            nestedHeaders: nestedHeaders,
-            rowHeaders: true,
-            columns: initColumns.map(() => ({ type: 'text' })),
-            licenseKey: 'non-commercial-and-evaluation',
-            contextMenu: ['row_above', 'row_below', 'separator', 'copy', 'cut'],
-            manualColumnResize: true,
-            stretchH: 'all',
-            height: '100%',
-            fillHandle: { autoInsertRow: false },
-            beforeAutofill: function(selectionData, sourceRange, targetRange, direction) {
-              if (!ctrlHeld) { return; }
+          document.addEventListener('keydown', e => { if (e.ctrlKey) ctrlHeld = true; });
+          document.addEventListener('keyup', e => { if (!e.ctrlKey) ctrlHeld = false; });
+          document.addEventListener('blur', () => { ctrlHeld = false; });
+
+          function buildColumnTree(flatCols, colorMap) {
+            const result = [];
+            let l1Node = null, l1Name = null, l2Node = null, l2Name = null;
+            for (const col of flatCols) {
+              const colors = colorMap[col.level1Group];
+              const leafName = col.leafName;
+              const leafProp = col.path;
+              const leaf = {
+                name: leafName,
+                prop: leafProp,
+                ...(colors && {
+                  columnTemplate: () => h('div', {
+                    style: { padding: '0 4px', backgroundColor: colors.leaf, width: '100%', height: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                  }, leafName)
+                })
+              };
+              if (!col.level1Group) {
+                l1Node = null; l1Name = null; l2Node = null; l2Name = null;
+                result.push(leaf);
+              } else {
+                if (col.level1Group !== l1Name) {
+                  const gn = col.level1Group;
+                  const gc = colorMap[gn];
+                  l1Node = {
+                    name: gn,
+                    children: [],
+                    ...(gc && {
+                      columnTemplate: () => h('div', {
+                        style: { padding: '0 4px', backgroundColor: gc.l1, width: '100%', height: '100%' }
+                      }, gn)
+                    })
+                  };
+                  l1Name = gn; l2Node = null; l2Name = null;
+                  result.push(l1Node);
+                }
+                if (!col.level2Group) {
+                  l2Node = null; l2Name = null;
+                  l1Node.children.push(leaf);
+                } else {
+                  if (col.level2Group !== l2Name) {
+                    const g2n = col.level2Group;
+                    const g2c = colorMap[l1Name];
+                    l2Node = {
+                      name: g2n,
+                      children: [],
+                      ...(g2c && {
+                        columnTemplate: () => h('div', {
+                          style: { padding: '0 4px', backgroundColor: g2c.l2, width: '100%', height: '100%' }
+                        }, g2n)
+                      })
+                    };
+                    l2Name = g2n;
+                    l1Node.children.push(l2Node);
+                  }
+                  l2Node.children.push(leaf);
+                }
+              }
+            }
+            return result;
+          }
+
+          function setupContextMenu() {
+            const menu = document.getElementById('ctx-menu');
+            // Prevent the grid from losing focus when interacting with the menu.
+            menu.addEventListener('mousedown', e => { e.preventDefault(); });
+            document.addEventListener('contextmenu', e => {
+              if (!grid || !grid.contains(e.target)) { return; }
+              e.preventDefault();
+              menu.style.display = 'block';
+              menu.style.left = e.clientX + 'px';
+              menu.style.top = e.clientY + 'px';
+            });
+            document.addEventListener('click', () => { menu.style.display = 'none'; });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.style.display = 'none'; });
+            document.getElementById('ctx-row-above').addEventListener('click', () => { menu.style.display = 'none'; insertRow('above'); });
+            document.getElementById('ctx-row-below').addEventListener('click', () => { menu.style.display = 'none'; insertRow('below'); });
+            document.getElementById('ctx-copy').addEventListener('click', () => {
+              menu.style.display = 'none';
+              document.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true }));
+            });
+            document.getElementById('ctx-cut').addEventListener('click', () => {
+              menu.style.display = 'none';
+              document.dispatchEvent(new ClipboardEvent('cut', { bubbles: true, cancelable: true }));
+            });
+          }
+
+          function insertRow(direction) {
+            const newRow = initColumns.reduce((obj, col) => { obj[col.path] = ''; return obj; }, {});
+            if (sourceData.length === 0) {
+              sourceData.push(newRow);
+            } else if (currentSelection) {
+              const idx = direction === 'above'
+                ? Math.min(currentSelection.y, currentSelection.y1)
+                : Math.max(currentSelection.y, currentSelection.y1) + 1;
+              sourceData.splice(idx, 0, newRow);
+            } else {
+              sourceData.push(newRow);
+            }
+            grid.source = [...sourceData];
+          }
+
+          function initialize(data) {
+            initColumns = data.columns;
+            const colorMap = {};
+            [...new Set(initColumns.map(c => c.level1Group).filter(Boolean))].forEach((g, i) => {
+              colorMap[g] = COLOR_SETS[i % COLOR_SETS.length];
+            });
+            sourceData = (data.rows || []).map(row =>
+              initColumns.reduce((obj, col, i) => { obj[col.path] = row[i] ?? ''; return obj; }, {})
+            );
+            grid = document.getElementById('grid');
+            grid.columns = buildColumnTree(initColumns, colorMap);
+            grid.source = [...sourceData];
+            grid.rowHeaders = true;
+            grid.range = true;
+            grid.resize = true;
+            grid.stretch = 'all';
+            grid.theme = 'default';
+            grid.hideAttribution = true;
+            grid.applyOnClose = true;
+
+            grid.addEventListener('celleditapply', e => {
+              const { rowIndex, prop, val } = e.detail;
+              if (sourceData[rowIndex] !== undefined) { sourceData[rowIndex][prop] = val; }
+            });
+
+            grid.addEventListener('rangeeditapply', e => {
+              const { data } = e.detail;
+              if (!data) { return; }
+              for (const rowIndex in data) {
+                const i = parseInt(rowIndex, 10);
+                if (sourceData[i] !== undefined) { Object.assign(sourceData[i], data[rowIndex]); }
+              }
+            });
+
+            // Track current selection range for row operations and autofill source.
+            grid.addEventListener('setrange', e => {
+              if (e.detail && 'x' in e.detail) { currentSelection = e.detail; }
+            });
+
+            // Ctrl+drag autofill: fills target range with numeric step computed from source.
+            grid.addEventListener('beforerangedataapply', async e => {
+              if (!ctrlHeld || !currentSelection) { return; }
+              e.preventDefault();
+              const fillRange = e.detail.range;
+              const srcRange = currentSelection;
+              const srcR0 = Math.min(srcRange.y, srcRange.y1);
+              const srcR1 = Math.max(srcRange.y, srcRange.y1);
+              const srcC0 = Math.min(srcRange.x, srcRange.x1);
+              const srcC1 = Math.max(srcRange.x, srcRange.x1);
+              const tgtR0 = Math.min(fillRange.y, fillRange.y1);
+              const tgtR1 = Math.max(fillRange.y, fillRange.y1);
+              const tgtC0 = Math.min(fillRange.x, fillRange.x1);
+              const tgtC1 = Math.max(fillRange.x, fillRange.x1);
+              const isDown = tgtR1 > srcR1;
+              const isUp = tgtR0 < srcR0;
+              const isRight = tgtC1 > srcC1;
+              const selectionData = [];
+              for (let r = srcR0; r <= srcR1; r++) {
+                const row = [];
+                for (let c = srcC0; c <= srcC1; c++) {
+                  const prop = initColumns[c]?.path;
+                  row.push(prop ? (sourceData[r]?.[prop] ?? '') : '');
+                }
+                selectionData.push(row);
+              }
               const srcRows = selectionData.length;
               const srcCols = (selectionData[0] ?? []).length;
               if (!srcRows || !srcCols) { return; }
-              const tgtRows = targetRange.to.row - targetRange.from.row + 1;
-              const tgtCols = targetRange.to.col - targetRange.from.col + 1;
-              const isDown = direction === 'down';
-              const isUp = direction === 'up';
-              const isRight = direction === 'right';
+              let fillR0, fillR1, fillC0, fillC1;
+              if (isDown)       { fillR0 = srcR1 + 1; fillR1 = tgtR1; fillC0 = tgtC0; fillC1 = tgtC1; }
+              else if (isUp)    { fillR0 = tgtR0; fillR1 = srcR0 - 1; fillC0 = tgtC0; fillC1 = tgtC1; }
+              else if (isRight) { fillR0 = tgtR0; fillR1 = tgtR1; fillC0 = srcC1 + 1; fillC1 = tgtC1; }
+              else              { fillR0 = tgtR0; fillR1 = tgtR1; fillC0 = tgtC0; fillC1 = srcC0 - 1; }
+              const tgtRows = fillR1 - fillR0 + 1;
+              const tgtCols = fillC1 - fillC0 + 1;
+              if (tgtRows <= 0 || tgtCols <= 0) { return; }
               function numericStep(vals) {
                 const nums = vals.map(v => parseFloat(v));
                 if (nums.some(n => isNaN(n))) { return null; }
@@ -122,103 +295,68 @@ public partial class DataEntryWindow : Window
                   result.push(row);
                 }
               }
-              return result;
-            },
-            afterGetColHeader: applyHeaderColors
-          });
-        }
-
-        function buildNestedHeaders(columns) {
-          const rows = [
-            buildGroupRow(columns, 'level1Group'),
-            buildGroupRow(columns, 'level2Group'),
-            columns.map(c => c.leafName)
-          ];
-          return rows.filter(row => row.some(cell =>
-            typeof cell === 'string' ? cell !== '' : (cell?.label ?? '') !== ''
-          ));
-        }
-
-        function buildGroupRow(columns, groupKey) {
-          const row = [];
-          let i = 0;
-          while (i < columns.length) {
-            const group = columns[i][groupKey];
-            if (group) {
-              let j = i + 1;
-              while (j < columns.length && columns[j][groupKey] === group && columns[j].level1Group === columns[i].level1Group) {
-                j++;
+              for (let r = 0; r < tgtRows; r++) {
+                for (let c = 0; c < tgtCols; c++) {
+                  const rowIdx = fillR0 + r;
+                  const colIdx = fillC0 + c;
+                  const val = result[r][c];
+                  const prop = initColumns[colIdx]?.path;
+                  if (prop && sourceData[rowIdx] !== undefined) { sourceData[rowIdx][prop] = val; }
+                  await grid.setDataAt({ row: rowIdx, col: colIdx, val });
+                }
               }
-              const colspan = j - i;
-              row.push(colspan > 1 ? { label: group, colspan } : group);
-              i = j;
-            } else {
-              row.push('');
-              i++;
+            });
+
+            setupContextMenu();
+          }
+
+          function addRow() {
+            insertRow('below');
+          }
+
+          function getSelectedRowsInfo() {
+            if (!currentSelection) { return { hasData: false, rowCount: 0 }; }
+            const minRow = Math.min(currentSelection.y, currentSelection.y1);
+            const maxRow = Math.max(currentSelection.y, currentSelection.y1);
+            const rowCount = maxRow - minRow + 1;
+            let hasData = false;
+            for (let r = minRow; r <= maxRow; r++) {
+              const row = sourceData[r];
+              if (row && Object.values(row).some(v => v !== null && v !== '' && v !== undefined)) {
+                hasData = true;
+                break;
+              }
             }
+            return { hasData, rowCount };
           }
-          return row;
-        }
 
-        function applyHeaderColors(col, TH, headerLevel) {
-          if (col < 0 || col >= initColumns.length) return;
-          const group = initColumns[col].level1Group;
-          if (!group) return;
-          const colorSet = colorMap[group];
-          if (!colorSet) return;
-          if (headerLevel === 0) TH.style.backgroundColor = colorSet.l1;
-          else if (headerLevel === 1) TH.style.backgroundColor = colorSet.l2;
-          else if (headerLevel === 2) TH.style.backgroundColor = colorSet.leaf;
-        }
-
-        function addRow() {
-          if (!hot) return;
-          const count = hot.countRows();
-          if (count === 0) {
-            hot.alter('insert_row_above', 0, 1);
-            return;
+          function deleteSelectedRows() {
+            if (!currentSelection) { return; }
+            const minRow = Math.min(currentSelection.y, currentSelection.y1);
+            const maxRow = Math.max(currentSelection.y, currentSelection.y1);
+            sourceData.splice(minRow, maxRow - minRow + 1);
+            grid.source = [...sourceData];
           }
-          const selected = hot.getSelected();
-          if (selected && selected.length > 0) {
-            const maxRow = selected.reduce((max, [r1, , r2]) => Math.max(max, r1, r2), -1);
-            hot.alter('insert_row_below', maxRow, 1);
-          } else {
-            hot.alter('insert_row_below', count - 1, 1);
-          }
-        }
 
-        function getSelectedRowsInfo() {
-          if (!hot) return { hasData: false, rowCount: 0 };
-          const selected = hot.getSelected();
-          if (!selected || selected.length === 0) return { hasData: false, rowCount: 0 };
-          const rowIndices = new Set();
-          for (const [startRow, , endRow] of selected) {
-            const min = Math.min(startRow, endRow);
-            const max = Math.max(startRow, endRow);
-            for (let i = min; i <= max; i++) rowIndices.add(i);
+          function getTableData() {
+            return sourceData.map(obj =>
+              initColumns.map(col => {
+                const v = obj[col.path];
+                return (v === null || v === undefined) ? '' : String(v);
+              })
+            );
           }
-          const hasData = [...rowIndices].some(i =>
-            hot.getDataAtRow(i).some(cell => cell !== null && cell !== '' && cell !== undefined));
-          return { hasData, rowCount: rowIndices.size };
-        }
 
-        function deleteSelectedRows() {
-          if (!hot) return;
-          const selected = hot.getSelected();
-          if (!selected || selected.length === 0) return;
-          const rowIndices = new Set();
-          for (const [startRow, , endRow] of selected) {
-            const min = Math.min(startRow, endRow);
-            const max = Math.max(startRow, endRow);
-            for (let i = min; i <= max; i++) rowIndices.add(i);
-          }
-          [...rowIndices].sort((a, b) => b - a).forEach(i => hot.alter('remove_row', i, 1));
-        }
+          // Expose all C#-callable functions to the global scope.
+          window.initialize = initialize;
+          window.addRow = addRow;
+          window.getSelectedRowsInfo = getSelectedRowsInfo;
+          window.deleteSelectedRows = deleteSelectedRows;
+          window.getTableData = getTableData;
 
-        function getTableData() {
-          if (!hot) return [];
-          return hot.getData().map(row => row.map(cell => (cell === null || cell === undefined) ? '' : String(cell)));
-        }
+          // Flush queued initialize call from C# (if it arrived before module was ready).
+          if (_pendingInit !== null) { initialize(_pendingInit); _pendingInit = null; }
+        })();
       </script>
     </body>
     </html>

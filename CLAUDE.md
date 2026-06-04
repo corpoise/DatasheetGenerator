@@ -87,7 +87,7 @@ dotnet format C:\depot\Work\DatasheetGenerator\DatasheetGenerator.slnx --verify-
 ## 알려진 미해결 항목 (코드 외)
 
 - IME 입력 동작 (#11): 수동 QA 필요
-- Handsontable 라이선스 (#14): 현재 `non-commercial-and-evaluation`, 상용 시 유료 전환 필요
+- RevoGrid 라이선스 (#14): MIT, 상용 사용 가능. `@revolist/revogrid@4.23.7` 기준.
 - 대용량 데이터 성능 (#17): 임계값 불명확, 문제 발생 시 대응
 - 고DPI 렌더링 (#18): 문제 발생 시 대응
 - 배포 시 DLL 누락 (#20): 배포 패키징 시 점검

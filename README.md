@@ -7,7 +7,7 @@
 ## Features
 
 - **JSON Schema 생성 및 편집** — 계층 구조(object, array 중첩)를 지원하는 스키마 정의
-- **스키마 기반 데이터 입력** — Handsontable 스프레드시트 UI로 데이터 입력 및 인라인 검증
+- **스키마 기반 데이터 입력** — RevoGrid 스프레드시트 UI로 데이터 입력 및 인라인 검증
 - **스키마 구조 보기** — 스키마 간 참조 관계를 그래프로 시각화
 - **다중 포맷 Export** — 내부 JSON, 도메인별 JSON, Excel(.xlsx) 동시 출력
 
@@ -40,7 +40,7 @@
 ## Tech Stack
 
 - C# / .NET 10 / WPF
-- WebView2 + Handsontable
+- WebView2 + RevoGrid
 - Newtonsoft.Json
 - xUnit
 
@@ -63,14 +63,27 @@
 }
 ```
 
-### 2. Handsontable 파일 준비
+### 2. RevoGrid 파일 준비
 
-라이선스 문제로 Handsontable 파일은 레포지토리에 포함되어 있지 않습니다.
-[Handsontable 공식 사이트에서](https://handsontable.com) 다운로드한 후 아래 경로에 배치합니다.
+RevoGrid 파일은 레포지토리에 포함되어 있지 않습니다.
+Node.js가 설치되어 있다면 아래 PowerShell 명령으로 자동 배치할 수 있습니다.
+
+```powershell
+$dst = "DatasheetGenerator\wwwroot\revogrid"
+npm pack @revolist/revogrid --dry-run 2>$null | Out-Null
+$tmp = New-Item -ItemType Directory -Force "$env:TEMP\rg-setup"
+Set-Location $tmp
+npm install @revolist/revogrid --no-save --silent
+New-Item -ItemType Directory -Force "$(git rev-parse --show-toplevel)\DatasheetGenerator\wwwroot\revogrid" | Out-Null
+Copy-Item "node_modules\@revolist\revogrid\dist\revo-grid\*" "$(git rev-parse --show-toplevel)\DatasheetGenerator\wwwroot\revogrid" -Recurse -Force
+Set-Location -
+Remove-Item $tmp -Recurse -Force
+```
+
+또는 npm 없이 직접 배치하는 경우, `@revolist/revogrid@4.23.7` 패키지의 `dist/revo-grid/` 디렉토리 내 전체 파일(24개)을 아래 경로에 복사합니다.
 
 ```
-DatasheetGenerator/wwwroot/handsontable.full.min.js
-DatasheetGenerator/wwwroot/handsontable.full.min.css
+DatasheetGenerator/wwwroot/revogrid/
 ```
 
 ### 3. 빌드
