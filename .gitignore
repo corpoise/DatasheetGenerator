@@ -59,6 +59,7 @@ coverage.*
 *.bat
 
 # Claude Code local files
+CLAUDE.md
 .claude/
 
 # Claude Code local files - nested folders
