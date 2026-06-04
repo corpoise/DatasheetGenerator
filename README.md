@@ -53,7 +53,7 @@
 ### 2. Handsontable 파일 준비
 
 라이선스 문제로 Handsontable 파일은 레포지토리에 포함되어 있지 않습니다.
-[Handsontable 공식 사이트](https://handsontable.com) 에서 다운로드한 후 아래 경로에 배치합니다.
+[Handsontable 공식 사이트에서](https://handsontable.com) 다운로드한 후 아래 경로에 배치합니다.
 
 ```
 DatasheetGenerator/wwwroot/handsontable.full.min.js
