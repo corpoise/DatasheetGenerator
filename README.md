@@ -37,6 +37,19 @@
 
 ---
 
+## Tech Stack
+
+- C# / .NET 10 / WPF
+- WebView2 + Handsontable
+- Newtonsoft.Json
+- xUnit
+
+<br>
+<br>
+
+---
+---
+
 ## Getting Started
 
 ### 1. appsettings.json 설정
@@ -66,15 +79,10 @@ DatasheetGenerator/wwwroot/handsontable.full.min.css
 dotnet build DatasheetGenerator.slnx
 ```
 
+<br>
+<br>
+
 ---
-
-## Tech Stack
-
-- C# / .NET 10 / WPF
-- WebView2 + Handsontable
-- Newtonsoft.Json
-- xUnit
-
 ---
 
 *This project was generated with [Claude Code](https://claude.ai/code).*
