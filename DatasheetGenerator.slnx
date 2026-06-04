@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DatasheetGenerator.Tests/DatasheetGenerator.Tests.csproj" />
+  <Project Path="DatasheetGenerator/DatasheetGenerator.csproj" />
+</Solution>

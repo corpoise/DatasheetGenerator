@@ -1,0 +1,83 @@
+# Build outputs
+bin/
+obj/
+out/
+build/
+dist/
+Debug/
+Release/
+x64/
+x86/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+
+# NuGet
+packages/
+*.nupkg
+project.lock.json
+project.assets.json
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Local config / secrets
+.env
+.env.*
+appsettings.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Test results / coverage
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# Batch files
+*.bat
+
+# Claude Code local files
+.claude/
+
+# Claude Code local files - nested folders
+**/.claude/
+
+Generated/
+generated/
+Output/
+output/
+Temp/
+temp/
+**/Generated/
+**/generated/
+**/Output/
+**/output/
+**/Temp/
+**/temp/
+
+# DatasheetGenerator
+DatasheetGenerator/wwwroot/schema_graph/data/
+DatasheetGenerator/wwwroot/handsontable.full.min.js
+DatasheetGenerator/wwwroot/handsontable.full.min.css
