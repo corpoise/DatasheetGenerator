@@ -13,4 +13,5 @@ public sealed record FlatColumn
   public double? Minimum { get; init; }
   public double? Maximum { get; init; }
   public bool ShowRequiredMark { get; init; }
+  public string? Format { get; init; }
 }

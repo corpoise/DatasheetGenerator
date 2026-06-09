@@ -2,6 +2,7 @@ namespace DatasheetGenerator.Services;
 
 using System.IO;
 using DatasheetGenerator.Models;
+using Newtonsoft.Json.Linq;
 
 public sealed class SchemaGraphService
 {
@@ -41,18 +42,13 @@ public sealed class SchemaGraphService
       {
         foreach (var col in flatColumns)
         {
-          if (col.Ref is null)
+          var parsed = ParseRef(col.Ref);
+          if (parsed is null)
           {
             continue;
           }
 
-          var dotIndex = col.Ref.IndexOf('.');
-          if (dotIndex < 0)
-          {
-            continue;
-          }
-
-          var refSchemaName = col.Ref[..dotIndex];
+          var refSchemaName = parsed.Value.Schema;
           if (!allSchemas.ContainsKey(refSchemaName) || levels.ContainsKey(refSchemaName))
           {
             continue;
@@ -105,6 +101,19 @@ public sealed class SchemaGraphService
     };
   }
 
+  private const string RefSeparator = ".schema.json#/definitions/";
+
+  private static (string Schema, string Column)? ParseRef(string? @ref)
+  {
+    if (@ref is null) { return null; }
+    var idx = @ref.IndexOf(RefSeparator, StringComparison.Ordinal);
+    if (idx <= 0) { return null; }
+    var schema = @ref[..idx];
+    var column = @ref[(idx + RefSeparator.Length)..];
+    if (string.IsNullOrEmpty(column)) { return null; }
+    return (schema, column);
+  }
+
   private Dictionary<string, IReadOnlyList<FlatColumn>> LoadAllSchemas(string schemaDirectory)
   {
     var result = new Dictionary<string, IReadOnlyList<FlatColumn>>(StringComparer.OrdinalIgnoreCase);
@@ -121,12 +130,19 @@ public sealed class SchemaGraphService
         ? Path.GetFileNameWithoutExtension(nameWithExt)
         : nameWithExt;
 
+
       try
       {
         var schemaText = this.schemaService.LoadSchemaText(file);
-        var columns = this.schemaService.ParseSchema(schemaText);
-        var flatColumns = this.dataEntryService.GetFlatColumns(columns);
-        result[name] = flatColumns;
+        if (name.Equals("enum", StringComparison.OrdinalIgnoreCase))
+        {
+          result[name] = ParseEnumSchemaColumns(schemaText);
+        }
+        else
+        {
+          var columns = this.schemaService.ParseSchema(schemaText);
+          result[name] = this.dataEntryService.GetFlatColumns(columns);
+        }
       }
       catch
       {
@@ -135,6 +151,26 @@ public sealed class SchemaGraphService
     }
 
     return result;
+  }
+
+  private static IReadOnlyList<FlatColumn> ParseEnumSchemaColumns(string schemaText)
+  {
+    try
+    {
+      var json = JObject.Parse(schemaText);
+      if (json["definitions"] is not JObject definitions)
+      {
+        return [];
+      }
+
+      return definitions.Properties()
+        .Select(p => new FlatColumn { Path = p.Name, LeafName = p.Name, JsonType = "string" })
+        .ToList();
+    }
+    catch
+    {
+      return [];
+    }
   }
 
   private static Dictionary<string, HashSet<string>> BuildReverseRefMap(
@@ -146,18 +182,13 @@ public sealed class SchemaGraphService
     {
       foreach (var col in flatColumns)
       {
-        if (col.Ref is null)
+        var parsed = ParseRef(col.Ref);
+        if (parsed is null)
         {
           continue;
         }
 
-        var dotIdx = col.Ref.IndexOf('.');
-        if (dotIdx < 0)
-        {
-          continue;
-        }
-
-        var targetSchema = col.Ref[..dotIdx];
+        var targetSchema = parsed.Value.Schema;
         if (!reverseRefs.TryGetValue(targetSchema, out var set))
         {
           set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -215,19 +246,14 @@ public sealed class SchemaGraphService
     {
       foreach (var col in flatColumns)
       {
-        if (col.Ref is null)
+        var parsed = ParseRef(col.Ref);
+        if (parsed is null)
         {
           continue;
         }
 
-        var dotIdx = col.Ref.IndexOf('.');
-        if (dotIdx < 0)
-        {
-          continue;
-        }
-
-        var toName = col.Ref[..dotIdx];
-        var toColumn = col.Ref[(dotIdx + 1)..];
+        var toName = parsed.Value.Schema;
+        var toColumn = parsed.Value.Column;
         var fromColumn = DeIndexPath(col.Path);
 
         if (!schemaData.ContainsKey(toName))

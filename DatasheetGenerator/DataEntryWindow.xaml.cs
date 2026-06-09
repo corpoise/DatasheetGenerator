@@ -364,6 +364,7 @@ public partial class DataEntryWindow : Window
 
   public bool IsReady { get; private set; }
   private bool isSaving;
+  private bool isOutputPathValid;
   private readonly DataEntryService entryService;
   private readonly IReadOnlyList<SchemaColumn> schemaColumns;
   private readonly IReadOnlyList<FlatColumn> flatColumns;
@@ -374,6 +375,8 @@ public partial class DataEntryWindow : Window
   private readonly IReadOnlyDictionary<string, IReadOnlySet<string>> refValues;
   private readonly IReadOnlyList<string> schemaDomains;
   private readonly IReadOnlyDictionary<string, string> domainJsonPaths;
+  private readonly string schemaName;
+  private readonly string codeOutputPath;
 
   public DataEntryWindow(
     string schemaName,
@@ -386,9 +389,11 @@ public partial class DataEntryWindow : Window
     PivotInfo? pivotInfo,
     IReadOnlyDictionary<string, IReadOnlySet<string>> refValues,
     IReadOnlyList<string> schemaDomains,
-    IReadOnlyDictionary<string, string> domainJsonPaths)
+    IReadOnlyDictionary<string, string> domainJsonPaths,
+    string codeOutputPath = "")
   {
     this.InitializeComponent();
+    this.schemaName = schemaName;
     this.Title = $"Data Entry - {schemaName}";
     this.entryService = entryService;
     this.schemaColumns = schemaColumns;
@@ -400,6 +405,17 @@ public partial class DataEntryWindow : Window
     this.refValues = refValues;
     this.schemaDomains = schemaDomains;
     this.domainJsonPaths = domainJsonPaths;
+    this.codeOutputPath = codeOutputPath;
+
+    this.isOutputPathValid = string.IsNullOrEmpty(xlsxPath) is false;
+    if (this.isOutputPathValid)
+    {
+      this.savePathText.Text = $"출력: {xlsxPath}";
+    }
+    else
+    {
+      this.savePathText.Text = "OutputRootPath가 설정되지 않았습니다. Config에 추가하세요.";
+    }
 
     this.Loaded += async (s, e) => await this.InitializeWebViewAsync();
     this.Closed += (s, e) => this.webView.Dispose();
@@ -464,7 +480,7 @@ public partial class DataEntryWindow : Window
     this.addRowButton.IsEnabled = true;
     this.deleteRowButton.IsEnabled = true;
     this.validateButton.IsEnabled = true;
-    this.saveButton.IsEnabled = true;
+    this.saveButton.IsEnabled = this.isOutputPathValid;
   }
 
   private string BuildInitDataJson()
@@ -578,6 +594,31 @@ public partial class DataEntryWindow : Window
     catch (Exception ex)
     {
       MessageBox.Show(this, ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+  }
+
+  private void CodeGenClick(object sender, RoutedEventArgs e)
+  {
+    try
+    {
+      var codeService = new CodeGenerationService();
+      var code = codeService.GenerateCode(this.schemaName, this.schemaColumns);
+
+      string? outputFilePath = null;
+      if (string.IsNullOrEmpty(this.codeOutputPath) is false)
+      {
+        outputFilePath = Path.Combine(this.codeOutputPath, $"{this.schemaName}GameData.cs");
+      }
+
+      var window = new CodePreviewWindow(this.schemaName, code, outputFilePath)
+      {
+        Owner = this
+      };
+      window.ShowDialog();
+    }
+    catch (Exception ex)
+    {
+      MessageBox.Show(this, ex.Message, "코드 생성 실패", MessageBoxButton.OK, MessageBoxImage.Error);
     }
   }
 

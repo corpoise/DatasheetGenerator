@@ -123,6 +123,90 @@ public sealed class AppConfigLoaderTests
     }
   }
 
+  [Fact]
+  public void Load_WhenCodeOutputPathConfigured_ReturnsResolvedPath()
+  {
+    var directory = CreateTempDirectory();
+    try
+    {
+      var path = Path.Combine(directory, "appsettings.json");
+      File.WriteAllText(path, """{ "OutputRootPath": "Output", "Domains": ["client"], "CodeOutputPath": "Code" }""");
+      var loader = new AppConfigLoader();
+
+      var result = loader.Load(path);
+
+      Assert.True(result.IsValid);
+      Assert.Equal(Path.Combine(directory, "Code"), result.CodeOutputPath);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [Fact]
+  public void Load_WhenCodeOutputPathAbsent_ReturnsEmptyString()
+  {
+    var directory = CreateTempDirectory();
+    try
+    {
+      var path = Path.Combine(directory, "appsettings.json");
+      File.WriteAllText(path, """{ "OutputRootPath": "Output", "Domains": ["client"] }""");
+      var loader = new AppConfigLoader();
+
+      var result = loader.Load(path);
+
+      Assert.True(result.IsValid);
+      Assert.Equal(string.Empty, result.CodeOutputPath);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [Fact]
+  public void Load_WhenEnumFilePathConfigured_ReturnsResolvedPath()
+  {
+    var directory = CreateTempDirectory();
+    try
+    {
+      var path = Path.Combine(directory, "appsettings.json");
+      File.WriteAllText(path, """{ "OutputRootPath": "Output", "Domains": ["client"], "EnumFilePath": "Enums/enum.cs" }""");
+      var loader = new AppConfigLoader();
+
+      var result = loader.Load(path);
+
+      Assert.True(result.IsValid);
+      Assert.Equal(Path.Combine(directory, "Enums", "enum.cs"), result.EnumFilePath);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  [Fact]
+  public void Load_WhenEnumFilePathAbsent_ReturnsEmptyString()
+  {
+    var directory = CreateTempDirectory();
+    try
+    {
+      var path = Path.Combine(directory, "appsettings.json");
+      File.WriteAllText(path, """{ "OutputRootPath": "Output", "Domains": ["client"] }""");
+      var loader = new AppConfigLoader();
+
+      var result = loader.Load(path);
+
+      Assert.True(result.IsValid);
+      Assert.Equal(string.Empty, result.EnumFilePath);
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
   private static string CreateTempDirectory()
   {
     var directory = Path.Combine(Path.GetTempPath(), $"DatasheetGeneratorTests_{Guid.NewGuid():N}");

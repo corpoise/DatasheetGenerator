@@ -116,6 +116,8 @@ public sealed class DataEntryService
             return new ValidationResult(false, $"{col.LeafName}: '{value}'은(는) {col.Ref}에 존재하지 않습니다.");
           }
         }
+
+
       }
     }
 
@@ -485,9 +487,14 @@ public sealed class DataEntryService
 
   public IReadOnlySet<string> LoadRefValues(string jsonDirectory, string refExpression)
   {
-    var dotIndex = refExpression.IndexOf('.');
-    var schemaName = refExpression[..dotIndex];
-    var columnName = refExpression[(dotIndex + 1)..];
+    const string separator = ".schema.json#/definitions/";
+    var sepIdx = refExpression.IndexOf(separator, StringComparison.Ordinal);
+    if (sepIdx <= 0)
+    {
+      return new HashSet<string>();
+    }
+    var schemaName = refExpression[..sepIdx];
+    var columnName = refExpression[(sepIdx + separator.Length)..];
     var jsonPath = Path.Combine(jsonDirectory, $"{schemaName}.json");
 
     if (File.Exists(jsonPath) is false)
@@ -550,6 +557,12 @@ public sealed class DataEntryService
     if (column.JsonType is "number" && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out _) is false)
     {
       return new ValidationResult(false, $"{column.LeafName}: '{value}' is not a valid number.");
+    }
+
+    if (column.Format is "datetime" &&
+        DateTime.TryParseExact(value, ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-ddTHH:mm:ssZ", "yyyy-MM-ddTHH:mm:sszzz", "yyyy-MM-ddTHH:mm:ss.fffZ", "yyyy-MM-ddTHH:mm:ss.fffzzz"], CultureInfo.InvariantCulture, DateTimeStyles.None, out _) is false)
+    {
+      return new ValidationResult(false, $"{column.LeafName}: '{value}' is not a valid datetime (24-hour, e.g. 2026-06-09 20:00:10).");
     }
 
     return new ValidationResult(true, string.Empty);
@@ -681,6 +694,7 @@ public sealed class DataEntryService
 
     if (column.JsonType is "array")
     {
+      var isUnorderedCollection = column.Format is "readonly-list" or "frozen-dictionary";
       var array = new JArray();
       for (var i = 0; i < column.ArrayMax; i++)
       {
@@ -691,6 +705,11 @@ public sealed class DataEntryService
 
           if (hasAnyValue is false)
           {
+            if (isUnorderedCollection)
+            {
+              continue;
+            }
+
             break;
           }
 
@@ -707,6 +726,11 @@ public sealed class DataEntryService
           var itemValue = Convert.ToString(row[$"{path}.{i}"]) ?? string.Empty;
           if (string.IsNullOrWhiteSpace(itemValue))
           {
+            if (isUnorderedCollection)
+            {
+              continue;
+            }
+
             break;
           }
 
@@ -838,7 +862,8 @@ public sealed class DataEntryService
       Ref = column.Ref,
       Minimum = column.Minimum,
       Maximum = column.Maximum,
-      ShowRequiredMark = column.IsRequired && column.IsNullable is false
+      ShowRequiredMark = column.IsRequired && column.IsNullable is false,
+      Format = column.Format
     });
   }
 
@@ -926,7 +951,8 @@ public sealed class DataEntryService
       Ref = column.Ref,
       Minimum = column.Minimum,
       Maximum = column.Maximum,
-      ShowRequiredMark = showRequiredMark || (isRequired && isNullable is false)
+      ShowRequiredMark = showRequiredMark || (isRequired && isNullable is false),
+      Format = column.Format
     });
   }
 

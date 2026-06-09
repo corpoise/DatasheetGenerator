@@ -16,6 +16,7 @@ public sealed class SchemaService
     }
 
     return Directory.GetFiles(schemaDirectory, "*.schema.json")
+      .Where(f => !GetSchemaName(f).Equals("enum", StringComparison.OrdinalIgnoreCase))
       .OrderBy(f => f)
       .Select(f => new SchemaInfo
       {
@@ -92,6 +93,12 @@ public sealed class SchemaService
     if (refValidation.IsValid is false)
     {
       return refValidation;
+    }
+
+    var customFormatValidation = ValidateCustomFormats(properties);
+    if (customFormatValidation.IsValid is false)
+    {
+      return customFormatValidation;
     }
 
     var domainArray = schema["domain"] as JArray;
@@ -289,6 +296,8 @@ public sealed class SchemaService
     var minimum = property["minimum"]?.Value<double?>();
     var maximum = property["maximum"]?.Value<double?>();
 
+    var format = property["format"]?.Value<string>();
+
     if (jsonType is "array")
     {
       var minItems = property["minItems"]?.Value<int>() ?? 0;
@@ -296,6 +305,7 @@ public sealed class SchemaService
       var itemsObj = property["items"] as JObject;
       var itemType = itemsObj is not null ? GetJsonType(itemsObj) : "string";
       var itemName = property["itemName"]?.Value<string>() ?? string.Empty;
+      var keyColumn = property["keyColumn"]?.Value<string>();
 
       var itemChildren = new List<SchemaColumn>();
       if (itemType is "object" && itemsObj is not null)
@@ -326,7 +336,9 @@ public sealed class SchemaService
         ItemJsonType = itemType,
         ItemName = itemName,
         ItemChildren = itemChildren,
-        Domain = domain
+        Domain = domain,
+        Format = format,
+        KeyColumn = keyColumn
       };
     }
 
@@ -359,7 +371,8 @@ public sealed class SchemaService
       Ref = @ref,
       Minimum = minimum,
       Maximum = maximum,
-      Domain = domain
+      Domain = domain,
+      Format = format
     };
   }
 
@@ -574,10 +587,16 @@ public sealed class SchemaService
           return new ValidationResult(false, $"ref 필드 '{property.Name}'은(는) 스칼라 타입 컬럼에만 사용할 수 있습니다.");
         }
 
-        var parts = refValue.Split('.');
-        if (parts.Length is not 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        const string refSeparator = ".schema.json#/definitions/";
+        var sepIdx = refValue.IndexOf(refSeparator, StringComparison.Ordinal);
+        if (sepIdx <= 0)
         {
-          return new ValidationResult(false, $"ref '{refValue}' 형식이 올바르지 않습니다. 'SchemaName.ColumnName' 형식이어야 합니다.");
+          return new ValidationResult(false, $"ref '{refValue}' 형식이 올바르지 않습니다. 'SchemaName.schema.json#/definitions/ColumnName' 형식이어야 합니다.");
+        }
+        var columnPath = refValue[(sepIdx + refSeparator.Length)..];
+        if (string.IsNullOrWhiteSpace(columnPath))
+        {
+          return new ValidationResult(false, $"ref '{refValue}'의 컬럼 경로가 비어있습니다.");
         }
       }
 
@@ -610,6 +629,188 @@ public sealed class SchemaService
           }
         }
       }
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateCustomFormats(JObject properties)
+  {
+    foreach (var property in properties.Properties())
+    {
+      var propObj = property.Value as JObject;
+      if (propObj is null)
+      {
+        continue;
+      }
+
+      var format = propObj["format"]?.Value<string>();
+      if (format is not null)
+      {
+        var formatResult = ValidateFormat(property.Name, propObj, format);
+        if (formatResult.IsValid is false)
+        {
+          return formatResult;
+        }
+      }
+
+      var jsonType = GetJsonType(propObj);
+      if (jsonType is "object")
+      {
+        var childProps = propObj["properties"] as JObject;
+        if (childProps is not null)
+        {
+          var childResult = ValidateCustomFormats(childProps);
+          if (childResult.IsValid is false)
+          {
+            return childResult;
+          }
+        }
+      }
+      else if (jsonType is "array")
+      {
+        var itemsObj = propObj["items"] as JObject;
+        if (itemsObj is not null)
+        {
+          if (GetJsonType(itemsObj) is "object")
+          {
+            var itemChildProps = itemsObj["properties"] as JObject;
+            if (itemChildProps is not null)
+            {
+              var childResult = ValidateCustomFormats(itemChildProps);
+              if (childResult.IsValid is false)
+              {
+                return childResult;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateFormat(string propertyName, JObject propObj, string format)
+  {
+    var jsonType = GetJsonType(propObj);
+
+    return format switch
+    {
+      "vector2" => ValidateVectorFormat(propertyName, propObj, jsonType, ["x", "y"]),
+      "vector3" => ValidateVectorFormat(propertyName, propObj, jsonType, ["x", "y", "z"]),
+      "timespan" => ValidateTimespanObjectFormat(propertyName, propObj, jsonType),
+      "datetime" => ValidateDatetimeFormat(propertyName, jsonType),
+      "timespan-hour" or "timespan-minute" or "timespan-second" or "timespan-millisecond"
+        => ValidateTimespanFormat(propertyName, jsonType),
+      "readonly-list" => ValidateReadonlyListFormat(propertyName, jsonType),
+      "frozen-dictionary" => ValidateFrozenDictionaryFormat(propertyName, propObj, jsonType),
+      _ => new ValidationResult(false, $"'{propertyName}'에 알 수 없는 format '{format}'이(가) 지정되었습니다.")
+    };
+  }
+
+  private static ValidationResult ValidateVectorFormat(string propertyName, JObject propObj, string jsonType, string[] components)
+  {
+    if (jsonType is not "object")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 vector format은 type이 object이어야 합니다.");
+    }
+
+    var childProps = propObj["properties"] as JObject;
+    foreach (var component in components)
+    {
+      if (childProps?[component] is not JObject componentObj)
+      {
+        return new ValidationResult(false, $"'{propertyName}'의 vector format에 '{component}' 프로퍼티가 없습니다.");
+      }
+
+      if (GetJsonType(componentObj) is not "number")
+      {
+        return new ValidationResult(false, $"'{propertyName}.{component}'는 number 타입이어야 합니다.");
+      }
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateDatetimeFormat(string propertyName, string jsonType)
+  {
+    if (jsonType is not "string")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 datetime format은 type이 string이어야 합니다.");
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateTimespanFormat(string propertyName, string jsonType)
+  {
+    if (jsonType is not "integer")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 timespan format은 type이 integer이어야 합니다.");
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateTimespanObjectFormat(string propertyName, JObject propObj, string jsonType)
+  {
+    if (jsonType is not "object")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 timespan format은 type이 object이어야 합니다.");
+    }
+
+    string[] components = ["Hour", "Minute", "Second", "Millisecond"];
+    var childProps = propObj["properties"] as JObject;
+    foreach (var component in components)
+    {
+      if (childProps?[component] is not JObject componentObj)
+      {
+        return new ValidationResult(false, $"'{propertyName}'의 timespan format에 '{component}' 프로퍼티가 없습니다.");
+      }
+
+      if (GetJsonType(componentObj) is not "integer")
+      {
+        return new ValidationResult(false, $"'{propertyName}.{component}'는 integer 타입이어야 합니다.");
+      }
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateReadonlyListFormat(string propertyName, string jsonType)
+  {
+    if (jsonType is not "array")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 readonly-list format은 type이 array이어야 합니다.");
+    }
+
+    return new ValidationResult(true, "Validation succeeded.");
+  }
+
+  private static ValidationResult ValidateFrozenDictionaryFormat(string propertyName, JObject propObj, string jsonType)
+  {
+    if (jsonType is not "array")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 frozen-dictionary format은 type이 array이어야 합니다.");
+    }
+
+    var keyColumn = propObj["keyColumn"]?.Value<string>();
+    if (string.IsNullOrWhiteSpace(keyColumn))
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 frozen-dictionary format은 keyColumn이 필요합니다.");
+    }
+
+    var itemsObj = propObj["items"] as JObject;
+    if (itemsObj is null || GetJsonType(itemsObj) is not "object")
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 frozen-dictionary format은 items가 object 타입이어야 합니다.");
+    }
+
+    var itemsProperties = itemsObj["properties"] as JObject;
+    if (itemsProperties?[keyColumn] is null)
+    {
+      return new ValidationResult(false, $"'{propertyName}'의 frozen-dictionary keyColumn '{keyColumn}'이(가) items.properties에 없습니다.");
     }
 
     return new ValidationResult(true, "Validation succeeded.");

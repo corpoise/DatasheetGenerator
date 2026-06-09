@@ -7,8 +7,10 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using Microsoft.Win32;
+using Newtonsoft.Json.Linq;
 using DatasheetGenerator.Configuration;
 using DatasheetGenerator.Export;
 using DatasheetGenerator.Models;
@@ -19,13 +21,16 @@ public partial class MainWindow : Window
   private readonly ObservableCollection<SchemaInfo> schemas;
   private readonly SchemaService schemaService;
   private readonly DataEntryService dataEntryService;
+  private readonly EnumParsingService enumParsingService = new();
   private readonly ICollectionView? schemaView;
   private string outputRootPath = string.Empty;
   private string schemaDirectory = string.Empty;
   private string internalDataDirectory = string.Empty;
   private string excelDirectory = string.Empty;
   private string configPath = string.Empty;
+  private string codeOutputPath = string.Empty;
   private IReadOnlyList<string> configuredDomains = [];
+  private IReadOnlyDictionary<string, IReadOnlyList<string>> enumSchema = new Dictionary<string, IReadOnlyList<string>>();
   private SchemaInfo? selectedSchema;
 
   public MainWindow()
@@ -68,6 +73,7 @@ public partial class MainWindow : Window
 
     this.outputRootPath = result.OutputRootPath;
     this.configuredDomains = result.Domains;
+    this.codeOutputPath = result.CodeOutputPath;
     this.schemaDirectory = Path.Combine(result.OutputRootPath, "schema");
     this.internalDataDirectory = Path.Combine(
       Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -79,6 +85,9 @@ public partial class MainWindow : Window
     Directory.CreateDirectory(this.schemaDirectory);
     Directory.CreateDirectory(this.internalDataDirectory);
     Directory.CreateDirectory(this.excelDirectory);
+
+    var enumSchemaPath = Path.Combine(this.schemaDirectory, "enum.schema.json");
+    this.enumSchema = this.enumParsingService.GenerateEnumSchema(result.EnumFilePath, enumSchemaPath);
 
     return true;
   }
@@ -114,13 +123,12 @@ public partial class MainWindow : Window
   private void RefreshInfoPanel()
   {
     var hasSelection = this.selectedSchema is not null;
-    this.schemaGraphButton.IsEnabled = hasSelection;
+    this.schemaInfoPanel.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
+    this.noSelectionPanel.Visibility = hasSelection ? Visibility.Collapsed : Visibility.Visible;
     this.editSchemaButton.IsEnabled = hasSelection;
     this.dataEntryButton.IsEnabled = hasSelection;
-    this.renameSchemaButton.IsEnabled = hasSelection;
-    this.deleteSchemaButton.IsEnabled = hasSelection;
-    this.schemaInfoPanel.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
-    this.noSelectionTextBlock.Visibility = hasSelection ? Visibility.Collapsed : Visibility.Visible;
+    this.schemaGraphButton.IsEnabled = hasSelection;
+    this.codeViewButton.IsEnabled = hasSelection;
 
     if (this.selectedSchema is null)
     {
@@ -133,31 +141,50 @@ public partial class MainWindow : Window
     {
       var schemaText = this.schemaService.LoadSchemaText(this.selectedSchema.FilePath);
       var columns = this.schemaService.ParseSchema(schemaText);
-      this.columnPreviewList.ItemsSource = this.BuildColumnPreview(columns, string.Empty);
+      this.fieldCountText.Text = columns.Count.ToString();
+      this.refFieldCountText.Text = CountRefFields(columns).ToString();
     }
     catch
     {
-      this.columnPreviewList.ItemsSource = new[] { "(스키마 파싱 실패)" };
+      this.fieldCountText.Text = "-";
+      this.refFieldCountText.Text = "-";
+    }
+
+    var jsonPath = Path.Combine(this.internalDataDirectory, $"{this.selectedSchema.Name}.json");
+    this.dataRowCountText.Text = CountDataRows(jsonPath).ToString();
+
+    try
+    {
+      var lastModified = File.GetLastWriteTime(this.selectedSchema.FilePath);
+      this.lastModifiedText.Text = lastModified.ToString("yyyy-MM-dd HH:mm");
+    }
+    catch
+    {
+      this.lastModifiedText.Text = "-";
     }
   }
 
-  private IReadOnlyList<string> BuildColumnPreview(IReadOnlyList<SchemaColumn> columns, string prefix)
+  private static int CountRefFields(IReadOnlyList<SchemaColumn> columns)
   {
-    var items = new List<string>();
+    var count = 0;
     foreach (var col in columns)
     {
-      var label = string.IsNullOrEmpty(prefix) ? col.Name : $"{prefix} > {col.Name}";
-      if (col.JsonType is "object")
-      {
-        items.AddRange(this.BuildColumnPreview(col.Children, label));
-      }
-      else
-      {
-        items.Add($"• {label} ({col.JsonType})");
-      }
+      if (col.Ref is not null) count++;
+      count += CountRefFields(col.Children);
+      count += CountRefFields(col.ItemChildren);
     }
+    return count;
+  }
 
-    return items;
+  private static int CountDataRows(string jsonPath)
+  {
+    if (File.Exists(jsonPath) is false) return 0;
+    try
+    {
+      var token = JToken.Parse(File.ReadAllText(jsonPath));
+      return token is JArray arr ? arr.Count : 1;
+    }
+    catch { return 0; }
   }
 
   private void SchemaSearchChanged(object sender, TextChangedEventArgs e)
@@ -184,50 +211,16 @@ public partial class MainWindow : Window
     this.RefreshSchemaList();
   }
 
-  private void ClearSchemaListClick(object sender, RoutedEventArgs e)
+  private void SchemaMenuButtonClick(object sender, RoutedEventArgs e)
   {
-    this.schemas.Clear();
-    this.selectedSchema = null;
-    this.schemaListBox.SelectedItem = null;
-    this.RefreshInfoPanel();
-    this.SetStatus("목록을 초기화했습니다.");
-  }
-
-  private void LoadSchemaClick(object sender, RoutedEventArgs e)
-  {
-    var dialog = new OpenFileDialog
+    if (sender is Button button && button.DataContext is SchemaInfo schema)
     {
-      Title = "스키마 불러오기",
-      Filter = "스키마 파일 (*.schema.json)|*.schema.json",
-      InitialDirectory = this.schemaDirectory
-    };
-
-    if (dialog.ShowDialog(this) is not true)
-    {
-      return;
-    }
-
-    var filePath = dialog.FileName;
-    var existing = this.schemas.FirstOrDefault(s =>
-      string.Equals(s.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
-
-    if (existing is not null)
-    {
-      this.schemaListBox.SelectedItem = existing;
-    }
-    else
-    {
-      var nameWithExt = Path.GetFileNameWithoutExtension(filePath);
-      var name = nameWithExt.EndsWith(".schema", StringComparison.OrdinalIgnoreCase)
-        ? Path.GetFileNameWithoutExtension(nameWithExt)
-        : nameWithExt;
-
-      var schema = new SchemaInfo { Name = name, FilePath = filePath };
-      this.schemas.Add(schema);
       this.schemaListBox.SelectedItem = schema;
+      button.ContextMenu!.PlacementTarget = button;
+      button.ContextMenu.Placement = PlacementMode.Bottom;
+      button.ContextMenu.IsOpen = true;
+      e.Handled = true;
     }
-
-    this.schemaListBox.ScrollIntoView(this.schemaListBox.SelectedItem);
   }
 
   private void NewSchemaClick(object sender, RoutedEventArgs e)
@@ -282,6 +275,41 @@ public partial class MainWindow : Window
     window.ShowDialog();
   }
 
+  private void CodeViewClick(object sender, RoutedEventArgs e)
+  {
+    if (this.EnsureSelectedSchemaExists() is false)
+    {
+      return;
+    }
+
+    IReadOnlyList<SchemaColumn> schemaColumns;
+    try
+    {
+      var schemaText = this.schemaService.LoadSchemaText(this.selectedSchema!.FilePath);
+      schemaColumns = this.schemaService.ParseSchema(schemaText);
+    }
+    catch (Exception ex)
+    {
+      MessageBox.Show(this, ex.Message, "스키마 로드 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+      return;
+    }
+
+    var codeService = new CodeGenerationService();
+    var code = codeService.GenerateCode(this.selectedSchema!.Name, schemaColumns);
+
+    string? outputFilePath = null;
+    if (string.IsNullOrEmpty(this.codeOutputPath) is false)
+    {
+      outputFilePath = Path.Combine(this.codeOutputPath, $"{this.selectedSchema.Name}GameData.cs");
+    }
+
+    var window = new CodePreviewWindow(this.selectedSchema.Name, code, outputFilePath)
+    {
+      Owner = this
+    };
+    window.ShowDialog();
+  }
+
   private void DataEntryClick(object sender, RoutedEventArgs e)
   {
     if (this.EnsureSelectedSchemaExists() is false)
@@ -313,11 +341,30 @@ public partial class MainWindow : Window
     var domainJsonPaths = schemaDomains
       .ToDictionary(d => d, d => pathProvider.GetDomainJsonPath(this.selectedSchema!.Name, d));
 
+    const string schemaRefSeparator = ".schema.json#/definitions/";
     var refValues = new Dictionary<string, IReadOnlySet<string>>();
     foreach (var col in flatColumns)
     {
       if (col.Ref is null)
       {
+        continue;
+      }
+
+      var sepIdx = col.Ref.IndexOf(schemaRefSeparator, StringComparison.Ordinal);
+      if (sepIdx <= 0)
+      {
+        continue;
+      }
+
+      var schemaName = col.Ref[..sepIdx];
+      var columnPath = col.Ref[(sepIdx + schemaRefSeparator.Length)..];
+
+      if (schemaName.Equals("enum", StringComparison.OrdinalIgnoreCase))
+      {
+        if (this.enumSchema.TryGetValue(columnPath, out var enumValues))
+          refValues[col.Path] = new HashSet<string>(enumValues, StringComparer.Ordinal);
+        else
+          refValues[col.Path] = new HashSet<string>(StringComparer.Ordinal);
         continue;
       }
 
@@ -361,7 +408,8 @@ public partial class MainWindow : Window
       pivotInfo,
       refValues,
       schemaDomains,
-      domainJsonPaths)
+      domainJsonPaths,
+      this.codeOutputPath)
     {
       Owner = this
     };
@@ -388,8 +436,13 @@ public partial class MainWindow : Window
     Process.Start(new ProcessStartInfo(this.configPath) { UseShellExecute = true });
   }
 
-  private void RenameSchemaClick(object sender, RoutedEventArgs e)
+  private void RenameSchemaMenuClick(object sender, RoutedEventArgs e)
   {
+    if (sender is MenuItem mi && mi.Parent is ContextMenu cm && cm.PlacementTarget is Button btn && btn.DataContext is SchemaInfo s)
+    {
+      this.schemaListBox.SelectedItem = s;
+    }
+
     if (this.selectedSchema is null)
     {
       return;
@@ -447,8 +500,13 @@ public partial class MainWindow : Window
     this.SelectSchemaByPath(newSchemaPath);
   }
 
-  private void DeleteSchemaClick(object sender, RoutedEventArgs e)
+  private void DeleteSchemaMenuClick(object sender, RoutedEventArgs e)
   {
+    if (sender is MenuItem mi && mi.Parent is ContextMenu cm && cm.PlacementTarget is Button btn && btn.DataContext is SchemaInfo s)
+    {
+      this.schemaListBox.SelectedItem = s;
+    }
+
     if (this.selectedSchema is null)
     {
       return;

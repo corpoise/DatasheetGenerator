@@ -236,7 +236,7 @@ public sealed class SchemaGraphServiceTests : IDisposable
       {
         ["Id"] = new JObject { ["type"] = "integer", ["minimum"] = 1 },
         ["Name"] = new JObject { ["type"] = "string" },
-        [colName] = new JObject { ["ref"] = $"{targetSchema}.{targetColumn}" }
+        [colName] = new JObject { ["ref"] = $"{targetSchema}.schema.json#/definitions/{targetColumn}" }
       },
       ["required"] = new JArray("Id", "Name")
     };
@@ -252,8 +252,8 @@ public sealed class SchemaGraphServiceTests : IDisposable
       {
         ["Id"] = new JObject { ["type"] = "integer", ["minimum"] = 1 },
         ["Name"] = new JObject { ["type"] = "string" },
-        [$"{firstRef}Ref"] = new JObject { ["ref"] = $"{firstRef}.Name" },
-        [$"{secondRef}Ref"] = new JObject { ["ref"] = $"{secondRef}.Name" }
+        [$"{firstRef}Ref"] = new JObject { ["ref"] = $"{firstRef}.schema.json#/definitions/Name" },
+        [$"{secondRef}Ref"] = new JObject { ["ref"] = $"{secondRef}.schema.json#/definitions/Name" }
       },
       ["required"] = new JArray("Id", "Name")
     };
@@ -279,7 +279,7 @@ public sealed class SchemaGraphServiceTests : IDisposable
             ["type"] = "object",
             ["properties"] = new JObject
             {
-              ["Group"] = new JObject { ["ref"] = $"{targetSchema}.{targetColumn}" },
+              ["Group"] = new JObject { ["ref"] = $"{targetSchema}.schema.json#/definitions/{targetColumn}" },
               ["Weight"] = new JObject { ["type"] = "integer", ["minimum"] = 0 }
             },
             ["required"] = new JArray("Group", "Weight")

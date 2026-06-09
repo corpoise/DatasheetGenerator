@@ -9,7 +9,61 @@
 - **JSON Schema 생성 및 편집** — 계층 구조(object, array 중첩)를 지원하는 스키마 정의
 - **스키마 기반 데이터 입력** — RevoGrid 스프레드시트 UI로 데이터 입력 및 인라인 검증
 - **스키마 구조 보기** — 스키마 간 참조 관계를 그래프로 시각화
+- **C# 코드 생성 미리보기** — 스키마를 기반으로 C# `sealed record` 코드를 자동 생성하고 파일로 저장
+- **Enum 타입 참조** — `enum.schema.json`에 정의된 열거형을 스키마 필드에서 참조
 - **다중 포맷 Export** — 내부 JSON, 도메인별 JSON, Excel(.xlsx) 동시 출력
+
+---
+
+## C# Code Generation
+
+스키마를 선택하고 **C# 코드 보기**를 누르면 해당 스키마에 대응하는 C# `sealed record` 클래스를 자동 생성합니다. 생성된 코드는 WebView2 기반 에디터로 미리보고, **저장** 버튼으로 지정된 경로에 파일을 출력합니다.
+
+![C# 코드 미리보기](docs/images/csharp_code_preview.png)
+
+### 지원 타입
+
+| Schema 타입 | Format | C# 타입 |
+|------------|--------|---------|
+| `integer` | — | `int` |
+| `number` | — | `float` |
+| `boolean` | — | `bool` |
+| `string` | — | `string` |
+| `string` | `datetime` | `DateTime` |
+| `integer` | `timespan-hour` / `minute` / `second` / `millisecond` | `TimeSpan` |
+| `object` | `vector2` | `Vector2` |
+| `object` | `vector3` | `Vector3` |
+| `array` | — | `IReadOnlyList<T>` |
+| `array` | `frozen-dictionary` | `FrozenDictionary<string, T>` |
+| `ref` | `enum.schema.json#/definitions/TypeName` | `EnumTypeName` |
+
+배열 아이템이 object인 경우 중첩 `sealed record`를 함께 생성합니다.  
+nullable 필드는 `T?` 형태로 출력됩니다.
+
+---
+
+## Enum Reference
+
+C# enum 파일(`.cs`)을 지정하면 `enum.schema.json`이 자동 생성됩니다. 스키마 필드에서 아래와 같이 enum 타입을 참조합니다.
+
+```json
+{
+  "EnemyType": {
+    "ref": "enum.schema.json#/definitions/MonsterType"
+  }
+}
+```
+
+코드 생성 시 해당 필드는 `public MonsterType EnemyType { get; init; }` 형태로 출력됩니다.  
+스키마 구조 보기에서도 `enum` 노드가 연결된 형태로 표시됩니다.
+
+### 통합 ref 형식
+
+스키마 간 참조(cross-schema ref)와 enum 참조 모두 동일한 형식을 사용합니다.
+
+```
+"ref": "{SchemaName}.schema.json#/definitions/{ColumnName}"
+```
 
 ---
 

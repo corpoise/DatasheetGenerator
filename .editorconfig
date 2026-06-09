@@ -14,6 +14,8 @@ dotnet_style_qualification_for_field = true:error
 dotnet_style_qualification_for_property = true:error
 dotnet_style_qualification_for_method = true:error
 dotnet_style_qualification_for_event = true:error
+csharp_using_directive_placement = inside_namespace:warning
+dotnet_sort_system_directives_first = true:suggestion
 
 [*.xaml]
 indent_style = space

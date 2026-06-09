@@ -1037,13 +1037,13 @@ public sealed class DataEntryServiceTests
     var service = new DataEntryService();
     var columns = new[]
     {
-      new SchemaColumn { Name = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+      new SchemaColumn { Name = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
     };
 
     var flat = service.GetFlatColumns(columns);
 
     Assert.Single(flat);
-    Assert.Equal("TowerSkillSet.Name", flat[0].Ref);
+    Assert.Equal("TowerSkillSet.schema.json#/definitions/Name", flat[0].Ref);
   }
 
   [Fact]
@@ -1062,7 +1062,7 @@ public sealed class DataEntryServiceTests
       };
       File.WriteAllText(Path.Combine(directory, "TowerSkillSet.json"), json.ToString());
 
-      var values = service.LoadRefValues(directory, "TowerSkillSet.Name");
+      var values = service.LoadRefValues(directory, "TowerSkillSet.schema.json#/definitions/Name");
 
       Assert.Equal(3, values.Count);
       Assert.Contains("SkillSet_A", values);
@@ -1084,7 +1084,7 @@ public sealed class DataEntryServiceTests
     {
       var service = new DataEntryService();
 
-      var values = service.LoadRefValues(directory, "NonExistent.Name");
+      var values = service.LoadRefValues(directory, "NonExistent.schema.json#/definitions/Name");
 
       Assert.Empty(values);
     }
@@ -1100,7 +1100,7 @@ public sealed class DataEntryServiceTests
     var service = new DataEntryService();
     var columns = new[]
     {
-      new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", IsRequired = true, Ref = "TowerSkillSet.Name" }
+      new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", IsRequired = true, Ref = "TowerSkillSet.schema.json#/definitions/Name" }
     };
     var table = service.CreateDataTable(columns);
     var row = table.NewRow();
@@ -1122,7 +1122,7 @@ public sealed class DataEntryServiceTests
     var service = new DataEntryService();
     var columns = new[]
     {
-      new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", IsRequired = true, Ref = "TowerSkillSet.Name" }
+      new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", IsRequired = true, Ref = "TowerSkillSet.schema.json#/definitions/Name" }
     };
     var table = service.CreateDataTable(columns);
     var row = table.NewRow();
@@ -1429,7 +1429,7 @@ public sealed class DataEntryServiceTests
       var jsonPath = Path.Combine(directory, "Item.json");
       var flatColumns = new[]
       {
-        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
       };
 
       var errors = service.ValidateRefs(jsonPath, flatColumns, directory);
@@ -1454,7 +1454,7 @@ public sealed class DataEntryServiceTests
       File.WriteAllText(jsonPath, """[{"SkillSet":"UnknownSkill"}]""");
       var flatColumns = new[]
       {
-        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
       };
       // TowerSkillSet.json does NOT exist → skip validation for this ref
 
@@ -1481,7 +1481,7 @@ public sealed class DataEntryServiceTests
       File.WriteAllText(Path.Combine(directory, "TowerSkillSet.json"), """[{"Name":"SkillSet_A"},{"Name":"SkillSet_B"}]""");
       var flatColumns = new[]
       {
-        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
       };
 
       var errors = service.ValidateRefs(jsonPath, flatColumns, directory);
@@ -1507,14 +1507,14 @@ public sealed class DataEntryServiceTests
       File.WriteAllText(Path.Combine(directory, "TowerSkillSet.json"), """[{"Name":"SkillSet_A"}]""");
       var flatColumns = new[]
       {
-        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
       };
 
       var errors = service.ValidateRefs(jsonPath, flatColumns, directory);
 
       Assert.Single(errors);
       Assert.Contains("NotExist", errors[0]);
-      Assert.Contains("TowerSkillSet.Name", errors[0]);
+      Assert.Contains("TowerSkillSet.schema.json#/definitions/Name", errors[0]);
     }
     finally
     {
@@ -1535,7 +1535,7 @@ public sealed class DataEntryServiceTests
       File.WriteAllText(Path.Combine(directory, "TowerSkillSet.json"), """[{"Name":"SkillSet_A"}]""");
       var flatColumns = new[]
       {
-        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.Name" }
+        new FlatColumn { Path = "SkillSet", LeafName = "SkillSet", JsonType = "string", Ref = "TowerSkillSet.schema.json#/definitions/Name" }
       };
 
       var errors = service.ValidateRefs(jsonPath, flatColumns, directory);
@@ -1548,5 +1548,256 @@ public sealed class DataEntryServiceTests
     {
       Directory.Delete(directory, true);
     }
+  }
+
+  // ── Custom Format: FlatColumn propagation ─────────────
+
+  [Fact]
+  public void GetFlatColumns_WithDatetimeFormat_SetsFormatOnFlatColumn()
+  {
+    var service = new DataEntryService();
+    var columns = new[]
+    {
+      new SchemaColumn { Name = "CreatedAt", JsonType = "string", Format = "datetime" }
+    };
+
+    var flat = service.GetFlatColumns(columns);
+
+    Assert.Single(flat);
+    Assert.Equal("datetime", flat[0].Format);
+  }
+
+  [Fact]
+  public void GetFlatColumns_WithTimespanFormat_SetsFormatOnFlatColumn()
+  {
+    var service = new DataEntryService();
+    var columns = new[]
+    {
+      new SchemaColumn { Name = "Duration", JsonType = "integer", Format = "timespan-second" }
+    };
+
+    var flat = service.GetFlatColumns(columns);
+
+    Assert.Single(flat);
+    Assert.Equal("timespan-second", flat[0].Format);
+  }
+
+  // ── Custom Format: ValidateCellValue — datetime ───────
+
+  [Fact]
+  public void ValidateCellValue_WithDatetimeFormat_ValidIso_Passes()
+  {
+    var column = new FlatColumn { LeafName = "CreatedAt", JsonType = "string", Format = "datetime" };
+
+    var result = DataEntryService.ValidateCellValue(column, "2026-06-09T10:00:00Z");
+
+    Assert.True(result.IsValid);
+  }
+
+  [Fact]
+  public void ValidateCellValue_WithDatetimeFormat_ValidIsoWithOffset_Passes()
+  {
+    var column = new FlatColumn { LeafName = "CreatedAt", JsonType = "string", Format = "datetime" };
+
+    var result = DataEntryService.ValidateCellValue(column, "2026-06-09T10:00:00+09:00");
+
+    Assert.True(result.IsValid);
+  }
+
+  [Fact]
+  public void ValidateCellValue_WithDatetimeFormat_SpaceSeparated24Hour_Passes()
+  {
+    var column = new FlatColumn { LeafName = "CreatedAt", JsonType = "string", Format = "datetime" };
+
+    var result = DataEntryService.ValidateCellValue(column, "2026-06-09 20:00:10");
+
+    Assert.True(result.IsValid);
+  }
+
+  [Fact]
+  public void ValidateCellValue_WithDatetimeFormat_InvalidString_Fails()
+  {
+    var column = new FlatColumn { LeafName = "CreatedAt", JsonType = "string", Format = "datetime" };
+
+    var result = DataEntryService.ValidateCellValue(column, "not-a-date");
+
+    Assert.False(result.IsValid);
+    Assert.Contains("24-hour", result.Message);
+  }
+
+  [Fact]
+  public void ValidateCellValue_WithDatetimeFormat_PlainDate_Fails()
+  {
+    var column = new FlatColumn { LeafName = "CreatedAt", JsonType = "string", Format = "datetime" };
+
+    var result = DataEntryService.ValidateCellValue(column, "2026-06-09");
+
+    Assert.False(result.IsValid);
+  }
+
+  // ── Custom Format: SaveData — readonly-list skip empty ─
+
+  [Fact]
+  public void SaveData_WithReadonlyList_SkipsEmptyMiddleItems()
+  {
+    var directory = Path.Combine(Path.GetTempPath(), $"DataEntryServiceTests_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(directory);
+    try
+    {
+      var service = new DataEntryService();
+      var schemaColumns = new[]
+      {
+        new SchemaColumn
+        {
+          Name = "Tags",
+          JsonType = "array",
+          Format = "readonly-list",
+          ArrayMin = 0,
+          ArrayMax = 3,
+          ItemJsonType = "string"
+        }
+      };
+      var flatColumns = service.GetFlatColumns(schemaColumns);
+      var table = service.CreateDataTable(flatColumns);
+      var row = table.NewRow();
+      row["Tags.0"] = "A";
+      row["Tags.1"] = string.Empty;
+      row["Tags.2"] = "C";
+      table.Rows.Add(row);
+
+      var jsonPath = Path.Combine(directory, "test.json");
+      service.SaveData(table, schemaColumns, flatColumns, jsonPath, Path.Combine(directory, "test.xlsx"));
+
+      var json = JArray.Parse(File.ReadAllText(jsonPath));
+      var tags = (JArray)json[0]["Tags"]!;
+      Assert.Equal(2, tags.Count);
+      Assert.Equal("A", tags[0].Value<string>());
+      Assert.Equal("C", tags[1].Value<string>());
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  // ── Custom Format: SaveData — frozen-dictionary skip empty ─
+
+  [Fact]
+  public void SaveData_WithFrozenDictionary_SkipsEmptyRows()
+  {
+    var directory = Path.Combine(Path.GetTempPath(), $"DataEntryServiceTests_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(directory);
+    try
+    {
+      var service = new DataEntryService();
+      var schemaColumns = new[]
+      {
+        new SchemaColumn
+        {
+          Name = "StatMap",
+          JsonType = "array",
+          Format = "frozen-dictionary",
+          ArrayMin = 0,
+          ArrayMax = 3,
+          ItemJsonType = "object",
+          ItemChildren = new[]
+          {
+            new SchemaColumn { Name = "StatName", JsonType = "string" },
+            new SchemaColumn { Name = "Value", JsonType = "number" }
+          }
+        }
+      };
+      var flatColumns = service.GetFlatColumns(schemaColumns);
+      var table = service.CreateDataTable(flatColumns);
+      var row = table.NewRow();
+      row["StatMap.0.StatName"] = "Hp";
+      row["StatMap.0.Value"] = "100";
+      row["StatMap.2.StatName"] = "Mp";
+      row["StatMap.2.Value"] = "50";
+      table.Rows.Add(row);
+
+      var jsonPath = Path.Combine(directory, "test.json");
+      service.SaveData(table, schemaColumns, flatColumns, jsonPath, Path.Combine(directory, "test.xlsx"));
+
+      var json = JArray.Parse(File.ReadAllText(jsonPath));
+      var statMap = (JArray)json[0]["StatMap"]!;
+      Assert.Equal(2, statMap.Count);
+      Assert.Equal("Hp", statMap[0]["StatName"]!.Value<string>());
+      Assert.Equal("Mp", statMap[1]["StatName"]!.Value<string>());
+    }
+    finally
+    {
+      Directory.Delete(directory, true);
+    }
+  }
+
+  // ── EnumRef: ValidateData ─────────────────────────────
+
+  [Fact]
+  public void ValidateData_WithValidEnumRefValue_Passes()
+  {
+    var service = new DataEntryService();
+    var columns = new[]
+    {
+      new FlatColumn { Path = "EnemyType", LeafName = "EnemyType", JsonType = "string", Ref = "enum.schema.json#/definitions/MonsterType" }
+    };
+    var table = service.CreateDataTable(columns);
+    var row = table.NewRow();
+    row["EnemyType"] = "Elite";
+    table.Rows.Add(row);
+    var refValues = new Dictionary<string, IReadOnlySet<string>>
+    {
+      ["EnemyType"] = new HashSet<string> { "Normal", "Elite", "Boss" }
+    };
+
+    var result = service.ValidateData(table, columns, refValues);
+
+    Assert.True(result.IsValid);
+  }
+
+  [Fact]
+  public void ValidateData_WithInvalidEnumRefValue_ReturnsError()
+  {
+    var service = new DataEntryService();
+    var columns = new[]
+    {
+      new FlatColumn { Path = "EnemyType", LeafName = "EnemyType", JsonType = "string", Ref = "enum.schema.json#/definitions/MonsterType" }
+    };
+    var table = service.CreateDataTable(columns);
+    var row = table.NewRow();
+    row["EnemyType"] = "Dragon";
+    table.Rows.Add(row);
+    var refValues = new Dictionary<string, IReadOnlySet<string>>
+    {
+      ["EnemyType"] = new HashSet<string> { "Normal", "Elite", "Boss" }
+    };
+
+    var result = service.ValidateData(table, columns, refValues);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("Dragon", result.Message);
+  }
+
+  [Fact]
+  public void ValidateAll_WithInvalidEnumRefValue_ReturnsError()
+  {
+    var service = new DataEntryService();
+    var columns = new[]
+    {
+      new FlatColumn { Path = "EnemyType", LeafName = "EnemyType", JsonType = "string", Ref = "enum.schema.json#/definitions/MonsterType" }
+    };
+    var table = service.CreateDataTable(columns);
+    var row = table.NewRow();
+    row["EnemyType"] = "Unknown";
+    table.Rows.Add(row);
+    var refValues = new Dictionary<string, IReadOnlySet<string>>
+    {
+      ["EnemyType"] = new HashSet<string> { "Normal", "Elite", "Boss" }
+    };
+
+    var errors = service.ValidateAll(table, columns, refValues);
+
+    Assert.NotEmpty(errors);
+    Assert.Contains(errors, e => e.Contains("Unknown"));
   }
 }

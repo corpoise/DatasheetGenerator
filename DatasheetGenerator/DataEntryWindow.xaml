@@ -35,6 +35,12 @@
           <Button Content="Cancel" Click="CancelClick"/>
           <Button x:Name="saveButton" Content="Save" FontWeight="SemiBold" Click="SaveClick" IsEnabled="False"/>
         </StackPanel>
+        <TextBlock x:Name="savePathText"
+                   VerticalAlignment="Center"
+                   Foreground="#858585"
+                   FontSize="11"
+                   Margin="8,0"
+                   TextTrimming="CharacterEllipsis"/>
       </DockPanel>
     </Border>
 
@@ -46,6 +52,22 @@
       <TextBlock Text="★ = Required 컬럼"
                  FontSize="11"
                  Foreground="#806000"/>
+    </Border>
+
+    <Border DockPanel.Dock="Top"
+            Background="#F0F4FF"
+            BorderBrush="#C8D4F0"
+            BorderThickness="0,0,0,1"
+            Padding="8,4">
+      <StackPanel Orientation="Horizontal"
+                  HorizontalAlignment="Right">
+        <Button x:Name="codeGenButton"
+                Content="코드 생성"
+                Padding="10,4"
+                MinWidth="0"
+                Margin="0"
+                Click="CodeGenClick"/>
+      </StackPanel>
     </Border>
 
     <wv2:WebView2 x:Name="webView"/>

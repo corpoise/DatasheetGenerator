@@ -16,4 +16,6 @@ public sealed record SchemaColumn
   public string ItemName { get; init; } = string.Empty;
   public IReadOnlyList<SchemaColumn> ItemChildren { get; init; } = [];
   public IReadOnlyList<string>? Domain { get; init; }
+  public string? Format { get; init; }
+  public string? KeyColumn { get; init; }
 }

@@ -675,7 +675,7 @@ public sealed class SchemaServiceTests
       ["properties"] = new JObject
       {
         ["Name"] = new JObject { ["type"] = "string" },
-        ["SkillSet"] = new JObject { ["ref"] = "TowerSkillSet.Name" }
+        ["SkillSet"] = new JObject { ["ref"] = "TowerSkillSet.schema.json#/definitions/Name" }
       }
     }.ToString(Formatting.Indented);
 
@@ -685,7 +685,7 @@ public sealed class SchemaServiceTests
   }
 
   [Fact]
-  public void ValidateSchemaText_WithRefInvalidFormat_NoDot_Fails()
+  public void ValidateSchemaText_WithRefInvalidFormat_MissingSeparator_Fails()
   {
     var service = new SchemaService();
     var schema = new JObject
@@ -703,7 +703,7 @@ public sealed class SchemaServiceTests
   }
 
   [Fact]
-  public void ValidateSchemaText_WithRefInvalidFormat_TooManyParts_Fails()
+  public void ValidateSchemaText_WithRefInvalidFormat_WrongSeparator_Fails()
   {
     var service = new SchemaService();
     var schema = new JObject
@@ -711,7 +711,7 @@ public sealed class SchemaServiceTests
       ["type"] = "object",
       ["properties"] = new JObject
       {
-        ["SkillSet"] = new JObject { ["ref"] = "A.B.C" }
+        ["SkillSet"] = new JObject { ["ref"] = "TowerSkillSet.Name" }
       }
     }.ToString(Formatting.Indented);
 
@@ -734,7 +734,7 @@ public sealed class SchemaServiceTests
           ["type"] = "array",
           ["minItems"] = 0,
           ["maxItems"] = 3,
-          ["ref"] = "OtherSchema.Name",
+          ["ref"] = "OtherSchema.schema.json#/definitions/Name",
           ["items"] = new JObject { ["type"] = "string" }
         }
       }
@@ -757,7 +757,7 @@ public sealed class SchemaServiceTests
         ["Info"] = new JObject
         {
           ["type"] = "object",
-          ["ref"] = "OtherSchema.Name",
+          ["ref"] = "OtherSchema.schema.json#/definitions/Name",
           ["properties"] = new JObject
           {
             ["Value"] = new JObject { ["type"] = "string" }
@@ -780,14 +780,14 @@ public sealed class SchemaServiceTests
       ["type"] = "object",
       ["properties"] = new JObject
       {
-        ["SkillSet"] = new JObject { ["ref"] = "TowerSkillSet.Name" }
+        ["SkillSet"] = new JObject { ["ref"] = "TowerSkillSet.schema.json#/definitions/Name" }
       }
     }.ToString(Formatting.Indented);
 
     var columns = service.ParseSchema(schema);
 
     Assert.Single(columns);
-    Assert.Equal("TowerSkillSet.Name", columns[0].Ref);
+    Assert.Equal("TowerSkillSet.schema.json#/definitions/Name", columns[0].Ref);
   }
 
   [Fact]
@@ -1138,6 +1138,625 @@ public sealed class SchemaServiceTests
             ["Value"] = new JObject { ["type"] = "integer" }
           }
         }
+      }
+    }.ToString(Formatting.Indented);
+  }
+
+  // ── Custom Format: Parse ──────────────────────────────
+
+  [Fact]
+  public void ParseSchema_WithVector2Format_SetsFormat()
+  {
+    var service = new SchemaService();
+    var schemaText = new JObject
+    {
+      ["type"] = "object",
+      ["properties"] = new JObject
+      {
+        ["Position"] = new JObject
+        {
+          ["type"] = "object",
+          ["format"] = "vector2",
+          ["properties"] = new JObject
+          {
+            ["x"] = new JObject { ["type"] = "number" },
+            ["y"] = new JObject { ["type"] = "number" }
+          }
+        }
+      }
+    }.ToString(Formatting.Indented);
+
+    var columns = service.ParseSchema(schemaText);
+
+    Assert.Equal("vector2", columns[0].Format);
+  }
+
+  [Fact]
+  public void ParseSchema_WithFrozenDictionaryFormat_SetsFormatAndKeyColumn()
+  {
+    var service = new SchemaService();
+    var schemaText = new JObject
+    {
+      ["type"] = "object",
+      ["properties"] = new JObject
+      {
+        ["Stats"] = new JObject
+        {
+          ["type"] = "array",
+          ["format"] = "frozen-dictionary",
+          ["keyColumn"] = "Id",
+          ["minItems"] = 0,
+          ["maxItems"] = 10,
+          ["items"] = new JObject
+          {
+            ["type"] = "object",
+            ["properties"] = new JObject
+            {
+              ["Id"] = new JObject { ["type"] = "string" },
+              ["Value"] = new JObject { ["type"] = "integer" }
+            }
+          }
+        }
+      }
+    }.ToString(Formatting.Indented);
+
+    var columns = service.ParseSchema(schemaText);
+
+    Assert.Equal("frozen-dictionary", columns[0].Format);
+    Assert.Equal("Id", columns[0].KeyColumn);
+  }
+
+  // ── Custom Format: Validation — vector2 ──────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithVector2_ValidProperties_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector2",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "number" },
+        ["y"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithVector2_TypeNotObject_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "vector2"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("vector", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithVector2_MissingX_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector2",
+      ["properties"] = new JObject
+      {
+        ["y"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("x", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithVector2_MissingY_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector2",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("y", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithVector2_XNotNumber_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector2",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "string" },
+        ["y"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+  }
+
+  // ── Custom Format: Validation — vector3 ──────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithVector3_ValidProperties_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector3",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "number" },
+        ["y"] = new JObject { ["type"] = "number" },
+        ["z"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithVector3_MissingZ_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Position", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "vector3",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "number" },
+        ["y"] = new JObject { ["type"] = "number" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("z", result.Message);
+  }
+
+  // ── Custom Format: Validation — datetime ──────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithDatetime_TypeString_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("CreatedAt", new JObject
+    {
+      ["type"] = "string",
+      ["format"] = "datetime"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithDatetime_TypeNotString_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("CreatedAt", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "datetime"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("datetime", result.Message);
+  }
+
+  // ── Custom Format: Validation — timespan ──────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanSecond_TypeInteger_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Duration", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "timespan-second"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanMillisecond_TypeInteger_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Duration", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "timespan-millisecond"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanMinute_TypeInteger_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Duration", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "timespan-minute"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanHour_TypeInteger_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Duration", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "timespan-hour"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanSecond_TypeNotInteger_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Duration", new JObject
+    {
+      ["type"] = "string",
+      ["format"] = "timespan-second"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("timespan", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanObject_TypeObject_WithAllComponents_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Cooldown", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "timespan",
+      ["properties"] = new JObject
+      {
+        ["Hour"] = new JObject { ["type"] = "integer" },
+        ["Minute"] = new JObject { ["type"] = "integer" },
+        ["Second"] = new JObject { ["type"] = "integer" },
+        ["Millisecond"] = new JObject { ["type"] = "integer" }
+      }
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanObject_TypeNotObject_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Cooldown", new JObject
+    {
+      ["type"] = "integer",
+      ["format"] = "timespan"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("timespan", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanObject_MissingComponent_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Cooldown", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "timespan",
+      ["properties"] = new JObject
+      {
+        ["Hour"] = new JObject { ["type"] = "integer" },
+        ["Minute"] = new JObject { ["type"] = "integer" },
+        ["Second"] = new JObject { ["type"] = "integer" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("Millisecond", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithTimespanObject_ComponentNotInteger_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Cooldown", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "timespan",
+      ["properties"] = new JObject
+      {
+        ["Hour"] = new JObject { ["type"] = "number" },
+        ["Minute"] = new JObject { ["type"] = "integer" },
+        ["Second"] = new JObject { ["type"] = "integer" },
+        ["Millisecond"] = new JObject { ["type"] = "integer" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("integer", result.Message);
+  }
+
+  // ── Custom Format: Validation — readonly-list ──────────
+
+  [Fact]
+  public void ValidateSchemaText_WithReadonlyList_TypeArray_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Items", new JObject
+    {
+      ["type"] = "array",
+      ["format"] = "readonly-list",
+      ["minItems"] = 0,
+      ["maxItems"] = 10,
+      ["items"] = new JObject { ["type"] = "string" }
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithReadonlyList_TypeNotArray_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Items", new JObject
+    {
+      ["type"] = "object",
+      ["format"] = "readonly-list",
+      ["properties"] = new JObject
+      {
+        ["x"] = new JObject { ["type"] = "string" }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("readonly-list", result.Message);
+  }
+
+  // ── Custom Format: Validation — frozen-dictionary ──────
+
+  [Fact]
+  public void ValidateSchemaText_WithFrozenDictionary_ValidSchema_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Stats", new JObject
+    {
+      ["type"] = "array",
+      ["format"] = "frozen-dictionary",
+      ["keyColumn"] = "Id",
+      ["minItems"] = 0,
+      ["maxItems"] = 10,
+      ["items"] = new JObject
+      {
+        ["type"] = "object",
+        ["properties"] = new JObject
+        {
+          ["Id"] = new JObject { ["type"] = "string" },
+          ["Value"] = new JObject { ["type"] = "integer" }
+        }
+      }
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithFrozenDictionary_NoKeyColumn_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Stats", new JObject
+    {
+      ["type"] = "array",
+      ["format"] = "frozen-dictionary",
+      ["minItems"] = 0,
+      ["maxItems"] = 10,
+      ["items"] = new JObject
+      {
+        ["type"] = "object",
+        ["properties"] = new JObject
+        {
+          ["Id"] = new JObject { ["type"] = "string" }
+        }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("keyColumn", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithFrozenDictionary_KeyColumnNotInItemsProperties_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Stats", new JObject
+    {
+      ["type"] = "array",
+      ["format"] = "frozen-dictionary",
+      ["keyColumn"] = "NonExistent",
+      ["minItems"] = 0,
+      ["maxItems"] = 10,
+      ["items"] = new JObject
+      {
+        ["type"] = "object",
+        ["properties"] = new JObject
+        {
+          ["Id"] = new JObject { ["type"] = "string" }
+        }
+      }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("NonExistent", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithFrozenDictionary_ItemsNotObject_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Stats", new JObject
+    {
+      ["type"] = "array",
+      ["format"] = "frozen-dictionary",
+      ["keyColumn"] = "Id",
+      ["minItems"] = 0,
+      ["maxItems"] = 10,
+      ["items"] = new JObject { ["type"] = "string" }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+  }
+
+  // ── Custom Format: Validation — unknown ──────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithUnknownFormat_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("Field", new JObject
+    {
+      ["type"] = "string",
+      ["format"] = "unsupported-format"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("unsupported-format", result.Message);
+  }
+
+  // ── enum schema ref: Validation ──────────────────────
+
+  [Fact]
+  public void ValidateSchemaText_WithEnumSchemaRef_Passes()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("EnemyType", new JObject
+    {
+      ["type"] = "string",
+      ["ref"] = "enum.schema.json#/definitions/MonsterType"
+    });
+
+    Assert.True(service.ValidateSchemaText(schema).IsValid);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithEnumSchemaRefEmptyTypeName_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("EnemyType", new JObject
+    {
+      ["type"] = "string",
+      ["ref"] = "enum.schema.json#/definitions/"
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("컬럼 경로", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithEnumSchemaRefOnObjectType_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("EnemyType", new JObject
+    {
+      ["type"] = "object",
+      ["ref"] = "enum.schema.json#/definitions/MonsterType",
+      ["properties"] = new JObject { ["x"] = new JObject { ["type"] = "number" } }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("ref", result.Message);
+  }
+
+  [Fact]
+  public void ValidateSchemaText_WithEnumSchemaRefOnArrayType_Fails()
+  {
+    var service = new SchemaService();
+    var schema = BuildSchemaWithProperty("EnemyType", new JObject
+    {
+      ["type"] = "array",
+      ["ref"] = "enum.schema.json#/definitions/MonsterType",
+      ["minItems"] = 0,
+      ["maxItems"] = 5,
+      ["items"] = new JObject { ["type"] = "string" }
+    });
+
+    var result = service.ValidateSchemaText(schema);
+
+    Assert.False(result.IsValid);
+    Assert.Contains("ref", result.Message);
+  }
+
+  private static string BuildSchemaWithProperty(string name, JObject propObj)
+  {
+    return new JObject
+    {
+      ["type"] = "object",
+      ["domain"] = new JArray("client"),
+      ["properties"] = new JObject
+      {
+        [name] = propObj
       }
     }.ToString(Formatting.Indented);
   }
