@@ -113,9 +113,18 @@ C# enum 파일(`.cs`)을 지정하면 `enum.schema.json`이 자동 생성됩니�
 ```json
 {
   "OutputRootPath": "C:\\your\\output\\path",
-  "Domains": ["json"]
+  "Domains": ["json"],
+  "CodeOutputPath": "C:\\your\\code\\output\\path",
+  "EnumFilePath": "C:\\your\\path\\to\\enum.cs"
 }
 ```
+
+| 키 | 필수 | 설명 |
+|----|------|------|
+| `OutputRootPath` | ✓ | JSON·Excel·스키마 파일이 출력되는 루트 경로 |
+| `Domains` | ✓ | 도메인 이름 목록. 도메인별 서브폴더에 필드 필터링된 JSON을 출력 |
+| `CodeOutputPath` | — | C# 코드 생성 파일을 저장할 경로. 비워두면 저장 기능 비활성화 |
+| `EnumFilePath` | — | C# enum 소스 파일 경로. 지정 시 `enum.schema.json`을 자동 생성 |
 
 ### 2. RevoGrid 파일 준비
 
